@@ -70,11 +70,11 @@
         false))))
 
 (defn ends-with-doublec? [stem]
-  "Returns true if the stem ends with double consonant"
-  (let [last-two (take 2 (reverse stem))]
-   (if (= (nth last-two 0) (nth last-two 1))
-      true
-      false)))
+  (let [n (- (count stem) 3)]
+    (if (< n 0)
+      false
+      (let [x (nth stem n) y (nth stem (inc n))]
+        (and (consonant? x) (= x y))))))
 
 (defn ends-with? [stem suffix]
   "Returns true if stem ends with the suffix"
