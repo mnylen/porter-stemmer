@@ -125,11 +125,15 @@
    :else                                                                   word))
 
 (defn porter-step1b [word]
-  (cond
-   (and (ends-with? word "eed") (> (measure-before-suffix word 3) 0)) (replace-last 3 word "ee")
-   (and (ends-with? word "ed") (contains-vowel? word 2))              (porter-step1b-pass-two (replace-last 2 word ""))
-   (and (ends-with? word "ing") (contains-vowel? word 3))             (porter-step1b-pass-two (replace-last 3 word ""))
-   :else                                                              word))
+  (let [pu (penultimate word)]
+    (if (= pu \e)
+      (cond
+        (and (ends-with? word "eed") (> (measure-before-suffix word 3) 0)) (replace-last 3 word "ee")
+        (and (ends-with? word "ed") (contains-vowel? word 2))              (porter-step1b-pass-two (replace-last 2 word ""))
+        :else word)
+      (if (and (= pu \n) (ends-with? word "ing") (contains-vowel? word 3))
+        (porter-step1b-pass-two (replace-last 3 word ""))
+        word))))
 
 (defn porter-step1c [word]
   (if (and (contains-vowel? word 1) (ends-with? word "y"))
