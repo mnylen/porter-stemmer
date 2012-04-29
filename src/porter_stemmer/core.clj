@@ -263,12 +263,14 @@
 
 
 (defn stem [word]
-  (let [step1-result (porter-step1c (porter-step1b (porter-step1a word)))]
-    (let [step2-result (porter-step2 step1-result)]
-      (let [step3-result (porter-step3 step2-result)]
-        (let [step4-result (porter-step4 step3-result)]
-          (let [step5-result (porter-step5 step4-result)]
-            (apply str step5-result)))))))
+  (if (< (count word) 3)
+    word
+    (let [step1-result (porter-step1c (porter-step1b (porter-step1a word)))]
+      (let [step2-result (porter-step2 step1-result)]
+        (let [step3-result (porter-step3 step2-result)]
+          (let [step4-result (porter-step4 step3-result)]
+            (let [step5-result (porter-step5 step4-result)]
+              (apply str step5-result))))))))
 
 (defn -main
   [vocfile]
