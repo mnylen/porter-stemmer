@@ -272,6 +272,7 @@
 
 (defn -main
   [vocfile]
-  (let [voc (clojure.string/split-lines (slurp vocfile))]
-    (let [stemmed (map #(stem %) voc)]
-      (println (clojure.string/join \newline stemmed)))))
+  (with-open [rdr (clojure.java.io/reader vocfile)]
+    (let [stems (map #(stem %) (line-seq rdr))]
+      (println (clojure.string/join \newline stems)))))
+
