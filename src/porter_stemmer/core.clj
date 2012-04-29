@@ -94,35 +94,46 @@
         true
         false))))
 
-(defn replace-suffix [word suffix-length replacement]
-  "Returns a stem with the last suffix-length characters replaced with the replacement"
-  (let [stem (take (- (count word) suffix-length) word)]
+(defn replace-last [n word replacement]
+  "Returns a string with the last n characters replaced with the given replacement string"
+  (let [stem (take (- (count word) n) word)]
     (concat stem replacement)))
 
+(defn penultimate [word]
+  (if (< (count word) 3)
+    nil
+    (nth word (- (count word) 2))))
+
 (defn porter-step1a [word]
-  (cond
-   (ends-with? word "sses") (replace-suffix word 4 "ss")
-   (ends-with? word "ies")  (replace-suffix word 3 "i")
-   (ends-with? word "ss")   (replace-suffix word 2 "ss")
-   (ends-with? word "s")    (replace-suffix word 1 "s")
-   :else                    word))
+  (let [pu (penultimate word)]
+    (if (= pu \e)
+      (cond
+       (ends-with? word "sses") (replace-last 4 word "ss")
+       (ends-with? word "ies")  (replace-last 3 word "i")
+       :else word)
+      (if (= pu \s)
+        (cond
+          (ends-with? word "ss")   (replace-last 2 word "ss")
+          (ends-with? word "s")    (replace-last 1 word "")
+          :else word)
+        word))))
 
 (defn porter-step1b-pass-two [word]
   (cond
-   (and (ends-with-doublec? word) (not (ends-with-any? word #{\l \s \z}))) (replace-suffix word 1 "")
+   (and (ends-with-doublec? word) (not (ends-with-any? word #{\l \s \z}))) (replace-last 1 word "")
    (and (= (measure word) 1) (ends-with-cvc? word))                        (concat word "e")
    :else                                                                   word))
 
 (defn porter-step1b [word]
   (cond
-   (and (ends-with? word "eed") (> (measure-before-suffix word 3) 0)) (replace-suffix word 3 "ee")
-   (and (ends-with? word "ed") (contains-vowel? word 2))              (porter-step1b-pass-two (replace-suffix word 2 ""))
-   (and (ends-with? word "ing") (contains-vowel? word 3))             (porter-step1b-pass-two (replace-suffix word 3 ""))
+   (and (ends-with? word "eed") (> (measure-before-suffix word 3) 0)) (replace-last 3 word "ee")
+   (and (ends-with? word "ed") (contains-vowel? word 2))              (porter-step1b-pass-two (replace-last 2 word ""))
+   (and (ends-with? word "ing") (contains-vowel? word 3))             (porter-step1b-pass-two (replace-last 3 word ""))
    :else                                                              word))
 
 (defn porter-step1c [word]
   (if (and (contains-vowel? word 1) (ends-with? word "y"))
-    (replace-suffix word 1 "i")
+    (replace-last 1 word "i")
     word))
 
 (defn ends-with-and-measure-over-zero? [word suffix]
@@ -131,121 +142,116 @@
 (defn ends-with-and-measure-over-one? [word suffix]
   (and (ends-with? word suffix) (> (measure-before-suffix word (count suffix)) 1)))
 
-(defn penultimate [word]
-  (if (< (count word) 3)
-    nil
-    (nth word (- (count word) 2))))
-
 (defn porter-step2 [word]
   (cond
    (= (penultimate word) \a) (cond
-                              (ends-with-and-measure-over-zero? word "ational") (replace-suffix word 7 "ate")
-                              (ends-with-and-measure-over-zero? word "tional")  (replace-suffix word 6 "tion")
+                              (ends-with-and-measure-over-zero? word "ational") (replace-last 7 word "ate")
+                              (ends-with-and-measure-over-zero? word "tional")  (replace-last 6 word "tion")
                               :else word)
 
    (= (penultimate word) \c) (cond
-                              (ends-with-and-measure-over-zero? word "enci")    (replace-suffix word 4 "ence")
-                              (ends-with-and-measure-over-zero? word "anci")    (replace-suffix word 4 "ance")
+                              (ends-with-and-measure-over-zero? word "enci")    (replace-last 4 word "ence")
+                              (ends-with-and-measure-over-zero? word "anci")    (replace-last 4 word "ance")
                               :else word)
 
    (= (penultimate word) \e) (cond
-                              (ends-with-and-measure-over-zero? word "izer")    (replace-suffix word 4 "ize")
+                              (ends-with-and-measure-over-zero? word "izer")    (replace-last 4 word "ize")
                               :else word)
 
    (= (penultimate word) \l) (cond
-                              (ends-with-and-measure-over-zero? word "abli")    (replace-suffix word 4 "able")
-                              (ends-with-and-measure-over-zero? word "alli")    (replace-suffix word 4 "al")
-                              (ends-with-and-measure-over-zero? word "entli")   (replace-suffix word 5 "ent")
-                              (ends-with-and-measure-over-zero? word "eli")     (replace-suffix word 3 "eli")
-                              (ends-with-and-measure-over-zero? word "ousli")   (replace-suffix word 5 "ous")
+                              (ends-with-and-measure-over-zero? word "abli")    (replace-last 4 word "able")
+                              (ends-with-and-measure-over-zero? word "alli")    (replace-last 4 word "al")
+                              (ends-with-and-measure-over-zero? word "entli")   (replace-last 5 word "ent")
+                              (ends-with-and-measure-over-zero? word "eli")     (replace-last 3 word "eli")
+                              (ends-with-and-measure-over-zero? word "ousli")   (replace-last 5 word "ous")
                               :else word)
 
    (= (penultimate word) \o) (cond
-                              (ends-with-and-measure-over-zero? word "ization") (replace-suffix word 7 "ize")
-                              (ends-with-and-measure-over-zero? word "ation")   (replace-suffix word 5 "ate")
-                              (ends-with-and-measure-over-zero? word "ator")    (replace-suffix word 4 "ate")
+                              (ends-with-and-measure-over-zero? word "ization") (replace-last 7 word "ize")
+                              (ends-with-and-measure-over-zero? word "ation")   (replace-last 5 word "ate")
+                              (ends-with-and-measure-over-zero? word "ator")    (replace-last 4 word "ate")
                               :else word)
 
    (= (penultimate word) \s) (cond
-                              (ends-with-and-measure-over-zero? word "alism")   (replace-suffix word 5 "al")
-                              (ends-with-and-measure-over-zero? word "iveness") (replace-suffix word 7 "ive")
-                              (ends-with-and-measure-over-zero? word "fulness") (replace-suffix word 7 "ful")
-                              (ends-with-and-measure-over-zero? word "ousness") (replace-suffix word 7 "ous")
+                              (ends-with-and-measure-over-zero? word "alism")   (replace-last 5 word "al")
+                              (ends-with-and-measure-over-zero? word "iveness") (replace-last 7 word "ive")
+                              (ends-with-and-measure-over-zero? word "fulness") (replace-last 7 word "ful")
+                              (ends-with-and-measure-over-zero? word "ousness") (replace-last 7 word "ous")
                               :else word)
 
    (= (penultimate word) \t) (cond
-                              (ends-with-and-measure-over-zero? word "aliti")   (replace-suffix word 5 "al")
-                              (ends-with-and-measure-over-zero? word "iviti")   (replace-suffix word 5 "ive")
-                              (ends-with-and-measure-over-zero? word "biliti")  (replace-suffix word 6 "ble")
+                              (ends-with-and-measure-over-zero? word "aliti")   (replace-last 5 word "al")
+                              (ends-with-and-measure-over-zero? word "iviti")   (replace-last 5 word "ive")
+                              (ends-with-and-measure-over-zero? word "biliti")  (replace-last 6 word "ble")
                               :else word)
 
    :else word))
 
 (defn porter-step3 [word]
   (cond
-   (ends-with-and-measure-over-zero? word "icate") (replace-suffix word 5 "ic")
-   (ends-with-and-measure-over-zero? word "ative") (replace-suffix word 5 "")
-   (ends-with-and-measure-over-zero? word "alize") (replace-suffix word 5 "al")
-   (ends-with-and-measure-over-zero? word "iciti") (replace-suffix word 5 "ic")
-   (ends-with-and-measure-over-zero? word "ical") (replace-suffix word 4 "ic")
-   (ends-with-and-measure-over-zero? word "ful") (replace-suffix word 3 "")
-   (ends-with-and-measure-over-zero? word "ness") (replace-suffix word 4 "")
+   (ends-with-and-measure-over-zero? word "icate") (replace-last 5 word "ic")
+   (ends-with-and-measure-over-zero? word "ative") (replace-last 5 word "")
+   (ends-with-and-measure-over-zero? word "alize") (replace-last 5 word "al")
+   (ends-with-and-measure-over-zero? word "iciti") (replace-last 5 word "ic")
+   (ends-with-and-measure-over-zero? word "ical") (replace-last 4 word "ic")
+   (ends-with-and-measure-over-zero? word "ful") (replace-last 3 word "")
+   (ends-with-and-measure-over-zero? word "ness") (replace-last 4 word "")
    :else word))
 
 (defn porter-step4 [word]
   (let [c (penultimate word)]
     (cond
      (= c \a) (cond
-               (ends-with-and-measure-over-one? word "al") (replace-suffix word 2 "")
+               (ends-with-and-measure-over-one? word "al") (replace-last 2 word "")
                :else word)
 
      (= c \c) (cond
-               (ends-with-and-measure-over-one? word "ance") (replace-suffix word 4 "")
-               (ends-with-and-measure-over-one? word "ence") (replace-suffix word 4 "")
+               (ends-with-and-measure-over-one? word "ance") (replace-last 4 word "")
+               (ends-with-and-measure-over-one? word "ence") (replace-last 4 word "")
                :else word)
 
      (= c \e) (cond
-               (ends-with-and-measure-over-one? word "er") (replace-suffix word 2 "")
+               (ends-with-and-measure-over-one? word "er") (replace-last 2 word "")
                :else word)
 
      (= c \i) (cond
-               (ends-with-and-measure-over-one? word "ic") (replace-suffix word 2 "")
+               (ends-with-and-measure-over-one? word "ic") (replace-last 2 word "")
                :else word)
 
      (= c \l) (cond
-               (ends-with-and-measure-over-one? word "able") (replace-suffix word 4 "")
-               (ends-with-and-measure-over-one? word "ible") (replace-suffix word 4 "")
+               (ends-with-and-measure-over-one? word "able") (replace-last 4 word "")
+               (ends-with-and-measure-over-one? word "ible") (replace-last 4 word "")
                :else word)
 
      (= c \n) (cond
-               (ends-with-and-measure-over-one? word "ant")   (replace-suffix word 3 "")
-               (ends-with-and-measure-over-one? word "ement") (replace-suffix word 5 "")
-               (ends-with-and-measure-over-one? word "ment")  (replace-suffix word 4 "")
-               (ends-with-and-measure-over-one? word "ent")   (replace-suffix word 3 "")
+               (ends-with-and-measure-over-one? word "ant")   (replace-last 3 word "")
+               (ends-with-and-measure-over-one? word "ement") (replace-last 5 word "")
+               (ends-with-and-measure-over-one? word "ment")  (replace-last 4 word "")
+               (ends-with-and-measure-over-one? word "ent")   (replace-last 3 word "")
                :else word)
 
      (= c \o) (cond
-               (and (ends-with-and-measure-over-one? word "ion") (not (ends-with-any? word #{\s \t}))) (replace-suffix word 3 "")
-               (ends-with-and-measure-over-one? word "ou") (replace-suffix word 2 "")
+               (and (ends-with-and-measure-over-one? word "ion") (not (ends-with-any? word #{\s \t}))) (replace-last 3 word "")
+               (ends-with-and-measure-over-one? word "ou") (replace-last 2 word "")
                :else word)
 
-     (ends-with-and-measure-over-one? word "ism") (replace-suffix word 3 "")
-     (ends-with-and-measure-over-one? word "ate") (replace-suffix word 3 "")
-     (ends-with-and-measure-over-one? word "iti") (replace-suffix word 3 "")
-     (ends-with-and-measure-over-one? word "ous") (replace-suffix word 3 "")
-     (ends-with-and-measure-over-one? word "ive") (replace-suffix word 3 "")
-     (ends-with-and-measure-over-one? word "ize") (replace-suffix word 3 "")
+     (ends-with-and-measure-over-one? word "ism") (replace-last 3 word "")
+     (ends-with-and-measure-over-one? word "ate") (replace-last 3 word "")
+     (ends-with-and-measure-over-one? word "iti") (replace-last 3 word "")
+     (ends-with-and-measure-over-one? word "ous") (replace-last 3 word "")
+     (ends-with-and-measure-over-one? word "ive") (replace-last 3 word "")
+     (ends-with-and-measure-over-one? word "ize") (replace-last 3 word "")
      :else word)))
 
 (defn porter-step5a [word]
   (cond
-   (ends-with-and-measure-over-one? word "e") (replace-suffix word 1 "")
-   (and (ends-with? word "e") (not (ends-with-cvc? word)) (= (measure-before-suffix word 1))) (replace-suffix word 1 "")
+   (ends-with-and-measure-over-one? word "e") (replace-last 1 word "")
+   (and (ends-with? word "e") (not (ends-with-cvc? word)) (= (measure-before-suffix word 1))) (replace-last 1 word "")
    :else word))
 
 (defn porter-step5b [word]
   (if (and (> (measure word) 1) (ends-with? word "l") (ends-with-doublec? word))
-    (replace-suffix word 1 "")
+    (replace-last 1 word "")
     word))
 
 (defn porter-step5 [word]
