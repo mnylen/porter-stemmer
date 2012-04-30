@@ -1,15 +1,17 @@
 (ns porter-stemmer.core
   (:gen-class))
 
+;; First some helper functions to make things easier later
+
 (defn vowel? [c]
   (contains? #{\a \e \i \o \u} c))
 
 (defn consonant? [c]
   (false? (vowel? c)))
 
+(defn measure [word n]
+  "Returns measure for first n characters of string for s so that
 
-(defn measure [s]
-  "Returns measure m for s so that
      measure = 1 when s = <C>VC<V>
      measure = 2 when s = <C>VCVC<V>
      measure = 3 when s = <C>VCVCVC<V>
@@ -33,248 +35,464 @@
   ;;
   ;; If the last character of the string is consumed and we are in mode 2, increment m
   ;; and return - otherwise return m as it was
-  (loop [c (first s) cs (rest s) m 0 mode 0]
-    (if c
-      (if (= mode 0)
-        (recur (first cs) (rest cs) m (if (vowel? c) 1 0))
-        (if (= mode 1)
-          (recur (first cs) (rest cs) m (if (vowel? c) 1 2))
-          (if (= mode 2)
-            (recur (first cs) (rest cs) (if (vowel? c) (inc m) m) (if (vowel? c) 1 2)))))
+  (loop [i 0 m 0 mode 0]
+    (if (< i n)
+      (let [c (nth word i)] 
+        (if (= mode 0)
+          (recur (inc i) m (if (vowel? c) 1 0))
+          (if (= mode 1)
+            (recur (inc i) m (if (vowel? c) 1 2))
+            (if (= mode 2)
+              (recur (inc i) (if (vowel? c) (inc m) m) (if (vowel? c) 1 2))))))
       (if (= mode 2)
         (inc m)
-        m))))  
-
-(defn measure-before-suffix [word suffix-length]
-  "Returns measure for stem before the suffix"
-  (measure (take (- (count word) suffix-length) word)))
+        m))))
 
 (defn char-class [c]
   "Returns the character class for given character : 0 for vowel, 1 for consonant"
-  (if (vowel? c) 0 1))
+  (if (vowel? c) :v :c))
 
 (defn ends-with-any? [stem set]
   "Returns true if stem ends with any of the characters in the set"
-  (let [last-char (last stem)]
-    (if (contains? set last-char)
-      true
-      false)))
+  (contains? set (last stem)))
 
 (defn ends-with-cvc? [stem]
   "Returns true if the stem ends with consonant-vowel-consonant and the second consonant
    is not W, X or Y"
   (if (not (ends-with-any? stem #{\w \x \y}))
     (let [char-classes (take 3 (map char-class (reverse stem)))]
-      (if (= char-classes [1 0 1])
-        true
-        false))))
+      (= char-classes [:c :v :c]))))
 
 (defn ends-with-doublec? [stem]
-  (let [n (- (count stem) 3)]
+  (let [n (- (count stem) 2)]
     (if (< n 0)
       false
       (let [x (nth stem n) y (nth stem (inc n))]
         (and (consonant? x) (= x y))))))
 
-(defn ends-with? [stem suffix]
+(defn ends-with? [s1 word]
   "Returns true if stem ends with the suffix"
-  (if (= (seq suffix) (take-last (count suffix) stem))
+  (if (= (seq s1) (take-last (count s1) word))
     true
     false))
 
-(defn contains-vowel? [word suffix-length]
-  "Returns true if word contains a vowel before the last suffix-length characters that
-   forms the suffix.
+(defn has-vowel? [word s1-length]
+  (let [n (- (count word) s1-length)]
+    (loop [i 0]
+      (if (>= i n)
+        false
+        (if (vowel? (nth word i))
+          true
+          (recur (inc i)))))))
 
-     (contains-vowel? [\\p \\l \\a \\s \\t \\e \\r \\e \\d] 2) => true
-     (contains-vowel? [\\b \\l \\e \\d] 2) => false"
-  (let [stem (take (- (count word) suffix-length) word)]
-    (let [first-vowel (first (filter #(vowel? %) stem))]
-      (if-not (nil? first-vowel)
-        true
-        false))))
-
-(defn replace-last [n word replacement]
+(defn replace-last [n s2 word]
   "Returns a string with the last n characters replaced with the given replacement string"
   (let [stem (take (- (count word) n) word)]
-    (concat stem replacement)))
+    (concat stem s2)))
 
 (defn penultimate [word]
   (if (< (count word) 3)
     nil
     (nth word (- (count word) 2))))
 
-(defn porter-step1a [word]
+
+;; These functions return a condition that can be used with
+;; applies-to-rule?
+
+(defn c-m-gt [n]
+  "Condition returns true if m > n"
+  (fn [word s1]
+    (> (measure word (- (count word) (count s1))) n)))
+
+(defn c-m-eq [n]
+  "Condition returns true if m = n"
+  (fn [word s1]
+    (= (measure word (- (count word) (count s1))) n)))
+
+(defn c-v []
+  "Condition returns true if word has vowel before suffix"
+  (fn [word s1]
+    (has-vowel? word (count s1))))
+
+(defn c-o []
+  "Condition returns true word ends with cvc"
+  (fn [word s1]
+    (ends-with-cvc? word)))
+
+(defn c-not-o []
+  "Condition returns true if stem ends with cvc"
+  (fn [word s1]
+    (not (ends-with-cvc? (take (- (count word) (count s1)) word)))))
+
+(defn c-d []
+  "Condition returns true if stem ends with double consonant"
+  (fn [word s1]
+    (ends-with-doublec? word))) 
+
+(defn c-d-not [characters]
+  "Condition returns true if word ends with double consonant and does not end in one of the given characters" 
+  (fn [word s1]
+    (and (ends-with-doublec? word) (not (ends-with-any? word characters)))))
+
+(defn c-end [characters]
+  "Condition returns true if stem ends with one of the given characters"
+  (fn [word s1]
+    (ends-with-any? (replace-last (count s1) "" word) characters)))
+
+(defn c-not [suffix]
+  "Condition returns true if word does not end in given suffix"
+  (fn [word s1]
+    (not (ends-with? suffix word))))
+
+(defn applies-to-rule? [word s1 & fconds]
+  (if-not (ends-with? s1 word)
+    false
+    (let [n (count fconds)]
+      (loop [i 0]
+        (if (>= i n)
+          true
+          (let [f (nth fconds i)]
+            (if (f word s1)
+              (recur (inc i))
+              false)))))))
+
+;;(defn applies-to-rule? [word s1 & fconds]
+;;  (if-not (ends-with? s1 word)
+;;    false
+;;    (let [fails (filter #(false? %) (for [f fconds] (f word s1)))]
+;;      (empty? fails))))
+
+
+;; Step 1
+;;
+;; 1a)
+;;
+;;    SSES -> SS                         caresses  ->  caress
+;;    IES  -> I                          ponies    ->  poni
+;;                                       ties      ->  ti
+;;    SS   -> SS                         caress    ->  caress
+;;    S    ->                            cats      ->  cat
+;;
+;;
+;; 1b)
+;;
+;;    (m>0) EED -> EE                    feed      ->  feed
+;;                                       agreed    ->  agree
+;;    (*v*) ED  ->                       plastered ->  plaster
+;;                                       bled      ->  bled
+;;    (*v*) ING ->                       motoring  ->  motor
+;;                                       sing      ->  sing
+;;
+;; 1c) 
+;;
+;;    (*v*) Y -> I                    happy        ->  happi
+;;                                    sky          ->  sky
+
+(defn step1a [word]
   (let [pu (penultimate word)]
-    (if (= pu \e)
-      (cond
-       (ends-with? word "sses") (replace-last 4 word "ss")
-       (ends-with? word "ies")  (replace-last 3 word "i")
-       :else word)
-      (if (= pu \s)
-        (cond
-          (ends-with? word "ss")   (replace-last 2 word "ss")
-          (ends-with? word "s")    (replace-last 1 word "")
-          :else word)
-        word))))
-
-(defn porter-step1b-pass-two [word]
-  (cond
-   (and (ends-with-doublec? word) (not (ends-with-any? word #{\l \s \z}))) (replace-last 1 word "")
-   (and (= (measure word) 1) (ends-with-cvc? word))                        (concat word "e")
-   :else                                                                   word))
-
-(defn porter-step1b [word]
-  (let [pu (penultimate word)]
-    (if (= pu \e)
-      (cond
-        (and (ends-with? word "eed") (> (measure-before-suffix word 3) 0)) (replace-last 3 word "ee")
-        (and (ends-with? word "ed") (contains-vowel? word 2))              (porter-step1b-pass-two (replace-last 2 word ""))
-        :else word)
-      (if (and (= pu \n) (ends-with? word "ing") (contains-vowel? word 3))
-        (porter-step1b-pass-two (replace-last 3 word ""))
-        word))))
-
-(defn porter-step1c [word]
-  (if (and (contains-vowel? word 1) (ends-with? word "y"))
-    (replace-last 1 word "i")
-    word))
-
-(defn ends-with-and-measure-over-zero? [word suffix]
-  (and (ends-with? word suffix) (> (measure-before-suffix word (count suffix)) 0)))
-
-(defn ends-with-and-measure-over-one? [word suffix]
-  (and (ends-with? word suffix) (> (measure-before-suffix word (count suffix)) 1)))
-
-(defn porter-step2 [word]
-  (cond
-   (= (penultimate word) \a) (cond
-                              (ends-with-and-measure-over-zero? word "ational") (replace-last 7 word "ate")
-                              (ends-with-and-measure-over-zero? word "tional")  (replace-last 6 word "tion")
-                              :else word)
-
-   (= (penultimate word) \c) (cond
-                              (ends-with-and-measure-over-zero? word "enci")    (replace-last 4 word "ence")
-                              (ends-with-and-measure-over-zero? word "anci")    (replace-last 4 word "ance")
-                              :else word)
-
-   (= (penultimate word) \e) (cond
-                              (ends-with-and-measure-over-zero? word "izer")    (replace-last 4 word "ize")
-                              :else word)
-
-   (= (penultimate word) \l) (cond
-                              (ends-with-and-measure-over-zero? word "abli")    (replace-last 4 word "able")
-                              (ends-with-and-measure-over-zero? word "alli")    (replace-last 4 word "al")
-                              (ends-with-and-measure-over-zero? word "entli")   (replace-last 5 word "ent")
-                              (ends-with-and-measure-over-zero? word "eli")     (replace-last 3 word "eli")
-                              (ends-with-and-measure-over-zero? word "ousli")   (replace-last 5 word "ous")
-                              :else word)
-
-   (= (penultimate word) \o) (cond
-                              (ends-with-and-measure-over-zero? word "ization") (replace-last 7 word "ize")
-                              (ends-with-and-measure-over-zero? word "ation")   (replace-last 5 word "ate")
-                              (ends-with-and-measure-over-zero? word "ator")    (replace-last 4 word "ate")
-                              :else word)
-
-   (= (penultimate word) \s) (cond
-                              (ends-with-and-measure-over-zero? word "alism")   (replace-last 5 word "al")
-                              (ends-with-and-measure-over-zero? word "iveness") (replace-last 7 word "ive")
-                              (ends-with-and-measure-over-zero? word "fulness") (replace-last 7 word "ful")
-                              (ends-with-and-measure-over-zero? word "ousness") (replace-last 7 word "ous")
-                              :else word)
-
-   (= (penultimate word) \t) (cond
-                              (ends-with-and-measure-over-zero? word "aliti")   (replace-last 5 word "al")
-                              (ends-with-and-measure-over-zero? word "iviti")   (replace-last 5 word "ive")
-                              (ends-with-and-measure-over-zero? word "biliti")  (replace-last 6 word "ble")
-                              :else word)
-
-   :else word))
-
-(defn porter-step3 [word]
-  (cond
-   (ends-with-and-measure-over-zero? word "icate") (replace-last 5 word "ic")
-   (ends-with-and-measure-over-zero? word "ative") (replace-last 5 word "")
-   (ends-with-and-measure-over-zero? word "alize") (replace-last 5 word "al")
-   (ends-with-and-measure-over-zero? word "iciti") (replace-last 5 word "ic")
-   (ends-with-and-measure-over-zero? word "ical") (replace-last 4 word "ic")
-   (ends-with-and-measure-over-zero? word "ful") (replace-last 3 word "")
-   (ends-with-and-measure-over-zero? word "ness") (replace-last 4 word "")
-   :else word))
-
-(defn porter-step4 [word]
-  (let [c (penultimate word)]
     (cond
-     (= c \a) (cond
-               (ends-with-and-measure-over-one? word "al") (replace-last 2 word "")
-               :else word)
+      (= pu \e)
+        (cond
+          (applies-to-rule? word "sses") (replace-last 2 "" word)
+          (applies-to-rule? word "ies") (replace-last 2 ""  word)
+          :else word)
+      (= pu \s)
+        (cond
+          (applies-to-rule? word "ss") word
+          (applies-to-rule? word "s") (replace-last 1 "" word)
+          :else word)
+      :else word)))
 
-     (= c \c) (cond
-               (ends-with-and-measure-over-one? word "ance") (replace-last 4 word "")
-               (ends-with-and-measure-over-one? word "ence") (replace-last 4 word "")
-               :else word)
-
-     (= c \e) (cond
-               (ends-with-and-measure-over-one? word "er") (replace-last 2 word "")
-               :else word)
-
-     (= c \i) (cond
-               (ends-with-and-measure-over-one? word "ic") (replace-last 2 word "")
-               :else word)
-
-     (= c \l) (cond
-               (ends-with-and-measure-over-one? word "able") (replace-last 4 word "")
-               (ends-with-and-measure-over-one? word "ible") (replace-last 4 word "")
-               :else word)
-
-     (= c \n) (cond
-               (ends-with-and-measure-over-one? word "ant")   (replace-last 3 word "")
-               (ends-with-and-measure-over-one? word "ement") (replace-last 5 word "")
-               (ends-with-and-measure-over-one? word "ment")  (replace-last 4 word "")
-               (ends-with-and-measure-over-one? word "ent")   (replace-last 3 word "")
-               :else word)
-
-     (= c \o) (cond
-               (and (ends-with-and-measure-over-one? word "ion") (not (ends-with-any? word #{\s \t}))) (replace-last 3 word "")
-               (ends-with-and-measure-over-one? word "ou") (replace-last 2 word "")
-               :else word)
-
-     (ends-with-and-measure-over-one? word "ism") (replace-last 3 word "")
-     (ends-with-and-measure-over-one? word "ate") (replace-last 3 word "")
-     (ends-with-and-measure-over-one? word "iti") (replace-last 3 word "")
-     (ends-with-and-measure-over-one? word "ous") (replace-last 3 word "")
-     (ends-with-and-measure-over-one? word "ive") (replace-last 3 word "")
-     (ends-with-and-measure-over-one? word "ize") (replace-last 3 word "")
-     :else word)))
-
-(defn porter-step5a [word]
+(defn step1b-pass-two [word]
   (cond
-   (ends-with-and-measure-over-one? word "e") (replace-last 1 word "")
-   (and (ends-with? word "e") (not (ends-with-cvc? word)) (= (measure-before-suffix word 1))) (replace-last 1 word "")
-   :else word))
+    (applies-to-rule? word "at") (concat word [\e])
+    (applies-to-rule? word "bl") (concat word [\e])
+    (applies-to-rule? word "iz") (concat word [\e])
+    (applies-to-rule? word "" (c-d-not #{\l \s \z})) (replace-last 1 "" word)
+    (applies-to-rule? word "" (c-m-eq 1) (c-o)) (concat word [\e])
+    :else word))
 
-(defn porter-step5b [word]
-  (if (and (> (measure word) 1) (ends-with? word "l") (ends-with-doublec? word))
-    (replace-last 1 word "")
+(defn step1b [word]
+  (cond
+    (applies-to-rule? word "eed" (c-m-gt 0)) (replace-last 1 "" word)
+    
+    ;; have to check that the word doesn't end with "eed" here, because
+    ;; otherwise cases such as "feed" fall through
+    (applies-to-rule? word "ed"  (c-not "eed") (c-v)) (step1b-pass-two (replace-last 2 "" word))
+    (applies-to-rule? word "ing" (c-v)) (step1b-pass-two (replace-last 3 "" word))
+    :else word))
+
+(defn step1c [word]
+  (if (applies-to-rule? word "y" (c-v))
+    (replace-last 1 "i" word)
     word))
 
-(defn porter-step5 [word]
-  (porter-step5a (porter-step5b word)))
+(defn step1 [word]
+  (step1c (step1b (step1a word))))
 
 
-(defn stem [word]
+;; Step 2: Shorten suffixes
+;;
+;;   (m>0) ATIONAL ->  ATE           relational     ->  relate
+;;   (m>0) TIONAL  ->  TION          conditional    ->  condition
+;;                                   rational       ->  rational
+;;   (m>0) ENCI    ->  ENCE          valenci        ->  valence
+;;   (m>0) ANCI    ->  ANCE          hesitanci      ->  hesitance
+;;   (m>0) IZER    ->  IZE           digitizer      ->  digitize
+;;   (m>0) ABLI    ->  ABLE          conformabli    ->  conformable
+;;   (m>0) ALLI    ->  AL            radicalli      ->  radical
+;;   (m>0) ENTLI   ->  ENT           differentli    ->  different
+;;   (m>0) ELI     ->  E             vileli        - >  vile
+;;   (m>0) OUSLI   ->  OUS           analogousli    ->  analogous
+;;   (m>0) IZATION ->  IZE           vietnamization ->  vietnamize
+;;   (m>0) ATION   ->  ATE           predication    ->  predicate
+;;   (m>0) ATOR    ->  ATE           operator       ->  operate
+;;   (m>0) ALISM   ->  AL            feudalism      ->  feudal
+;;   (m>0) IVENESS ->  IVE           decisiveness   ->  decisive
+;;   (m>0) FULNESS ->  FUL           hopefulness    ->  hopeful
+;;   (m>0) OUSNESS ->  OUS           callousness    ->  callous
+;;   (m>0) ALITI   ->  AL            formaliti      ->  formal
+;;   (m>0) IVITI   ->  IVE           sensitiviti    ->  sensitive
+;;   (m>0) BILITI  ->  BLE           sensibiliti    ->  sensible
+
+(defn step2-case-a [word]
+  (cond
+    (applies-to-rule? word "ational" (c-m-gt 0)) (replace-last 5 "e" word)
+    (applies-to-rule? word "tional"  (c-not "ational") (c-m-gt 0)) (replace-last 2 "" word)
+    :else word))
+
+(defn step2-case-c [word]
+  (cond
+    (applies-to-rule? word "enci" (c-m-gt 0)) (replace-last 1 "e" word)
+    (applies-to-rule? word "anci" (c-m-gt 0)) (replace-last 1 "e" word)
+    :else word))
+
+(defn step2-case-e [word]
+  (cond
+    (applies-to-rule? word "izer" (c-m-gt 0)) (replace-last 1 "" word)
+    :else word))
+
+(defn step2-case-l [word]
+  (cond
+    (applies-to-rule? word "abli" (c-m-gt 0)) (replace-last 1 "e" word)
+    (applies-to-rule? word "alli" (c-m-gt 0)) (replace-last 2 "" word)
+    (applies-to-rule? word "entli" (c-m-gt 0)) (replace-last 2 "" word)
+    (applies-to-rule? word "eli" (c-m-gt 0)) (replace-last 2 "" word)
+    (applies-to-rule? word "ousli" (c-m-gt 0)) (replace-last 2 "" word)
+    :else word))
+
+(defn step2-case-o [word]
+  (cond
+    (applies-to-rule? word "ization" (c-m-gt 0)) (replace-last 5 "e" word)
+    (applies-to-rule? word "ation" (c-m-gt 0) (c-not "ization")) (replace-last 3 "e" word)
+    (applies-to-rule? word "ator" (c-m-gt 0)) (replace-last 2 "e" word)
+    :else word))
+
+(defn step2-case-s [word]
+  (cond
+    (applies-to-rule? word "alism" (c-m-gt 0)) (replace-last 3 "" word)
+    (applies-to-rule? word "iveness" (c-m-gt 0)) (replace-last 4 "" word)
+    (applies-to-rule? word "fulness" (c-m-gt 0)) (replace-last 4 "" word)
+    (applies-to-rule? word "ousness" (c-m-gt 0)) (replace-last 4 "" word)
+    :else word))
+
+(defn step2-case-t [word]
+  (cond
+    (applies-to-rule? word "aliti" (c-m-gt 0)) (replace-last 3 "" word)
+    (applies-to-rule? word "iviti" (c-m-gt 0)) (replace-last 3 "e" word)
+    (applies-to-rule? word "biliti" (c-m-gt 0)) (replace-last 5 "le" word)
+    :else word))
+
+(defn step2 [word]
+  (if (< (count word) 6)
+    word
+    (let [pu (penultimate word)]
+      (cond
+        (= pu \a) (step2-case-a word)
+        (= pu \c) (step2-case-c word)
+        (= pu \e) (step2-case-e word)
+        (= pu \l) (step2-case-l word)
+        (= pu \o) (step2-case-o word)
+        (= pu \s) (step2-case-s word)
+        (= pu \t) (step2-case-t word)
+        :else word))))
+
+;; 
+;; Step 3: Shorten suffixes some more and remove of the suffixes
+;;
+;;    (m>0) ICATE ->  IC              triplicate     ->  triplic
+;;    (m>0) ATIVE ->                  formative      ->  form
+;;    (m>0) ALIZE ->  AL              formalize      ->  formal
+;;    (m>0) ICITI ->  IC              electriciti    ->  electric
+;;    (m>0) ICAL  ->  IC              electrical     ->  electric
+;;    (m>0) FUL   ->                  hopeful        ->  hope
+;;    (m>0) NESS  ->                  goodness       ->  good
+
+(defn step3 [word]
+  (if (< (count word) 5)
+    word
+    (cond
+      (applies-to-rule? word "icate" (c-m-gt 0)) (replace-last 3 "" word)
+      (applies-to-rule? word "ative" (c-m-gt 0)) (replace-last 5 "" word)
+      (applies-to-rule? word "alize" (c-m-gt 0)) (replace-last 3 "" word)
+      (applies-to-rule? word "iciti" (c-m-gt 0)) (replace-last 3 "" word)
+      (applies-to-rule? word "ical"  (c-m-gt 0)) (replace-last 2 "" word)
+      (applies-to-rule? word "ful"   (c-m-gt 0)) (replace-last 3 "" word)
+      (applies-to-rule? word "ness"  (c-m-gt 0)) (replace-last 4 "" word)
+      :else word)))
+
+
+;; Step 4: Remove remaining suffixes
+;;
+;;    (m>1) AL    ->                  revival        ->  reviv
+;;    (m>1) ANCE  ->                  allowance      ->  allow
+;;    (m>1) ENCE  ->                  inference      ->  infer
+;;    (m>1) ER    ->                  airliner       ->  airlin
+;;    (m>1) IC    ->                  gyroscopic     ->  gyroscop
+;;    (m>1) ABLE  ->                  adjustable     ->  adjust
+;;    (m>1) IBLE  ->                  defensible     ->  defens
+;;    (m>1) ANT   ->                  irritant       ->  irrit
+;;    (m>1) EMENT ->                  replacement    ->  replac
+;;    (m>1) MENT  ->                  adjustment     ->  adjust
+;;    (m>1) ENT   ->                  dependent      ->  depend
+;;    (m>1 and (*S or *T)) ION ->     adoption       ->  adopt
+;;    (m>1) OU    ->                  homologou      ->  homolog
+;;    (m>1) ISM   ->                  communism      ->  commun
+;;    (m>1) ATE   ->                  activate       ->  activ
+;;    (m>1) ITI   ->                  angulariti     ->  angular
+;;    (m>1) OUS   ->                  homologous     ->  homolog
+;;    (m>1) IVE   ->                  effective      ->  effect
+;;    (m>1) IZE   ->                  bowdlerize     ->  bowdler
+;;
+;; As all cases require (m>1) the word must have at least 4 chars
+;; before suffix and the smallest suffix is 2 chars. So, we
+;; can safely skip any words smaller than 6 characters.
+
+(defn step4-case-a [word]
+  (cond
+    (applies-to-rule? word "al" (c-m-gt 1)) (replace-last 2 "" word)
+    :else word))
+
+(defn step4-case-c [word]
+  (cond
+    (applies-to-rule? word "ance" (c-m-gt 1)) (replace-last 4 "" word)
+    (applies-to-rule? word "ence" (c-m-gt 1)) (replace-last 4 "" word)
+    :else word))
+
+(defn step4-case-e [word]
+  (if (applies-to-rule? word "er" (c-m-gt 1))
+    (replace-last 2 "" word)
+    word))
+
+(defn step4-case-i [word]
+  (cond
+    (applies-to-rule? word "ic" (c-m-gt 1)) (replace-last 2 "" word)
+    :else word))
+
+(defn step4-case-l [word]
+  (cond
+    (applies-to-rule? word "able" (c-m-gt 1)) (replace-last 4 "" word)
+    (applies-to-rule? word "ible" (c-m-gt 1)) (replace-last 4 "" word)
+    :else word))
+
+(defn step4-case-n [word]
+  (cond
+    (applies-to-rule? word "ant" (c-m-gt 1)) (replace-last 3 "" word)
+    (applies-to-rule? word "ement" (c-m-gt 1)) (replace-last 5 "" word)
+    (applies-to-rule? word "ment" (c-not "ement") (c-m-gt 1)) (replace-last 4 "" word)
+    (applies-to-rule? word "ent" (c-not "ment") (c-m-gt 1)) (replace-last 3 "" word)
+    :else word))
+
+(defn step4-case-o [word]
+  (cond
+    (applies-to-rule? word "ion" (c-m-gt 1) (c-end #{\s \t})) (replace-last 3 "" word)
+    (applies-to-rule? word "ou"  (c-m-gt 1)) (replace-last 2 "" word)
+    :else word))
+
+(defn step4-case-s [word]
+  (cond
+    (applies-to-rule? word "ism" (c-m-gt 1)) (replace-last 3 "" word)
+    :else word))
+
+(defn step4-case-t [word]
+  (cond
+    (applies-to-rule? word "ate" (c-m-gt 1)) (replace-last 3 "" word)
+    (applies-to-rule? word "iti" (c-m-gt 1)) (replace-last 3 "" word)
+    :else word))
+
+(defn step4-case-u [word]
+  (cond
+    (applies-to-rule? word "ous" (c-m-gt 1)) (replace-last 3 "" word)
+    :else word))
+
+(defn step4-case-v [word]
+  (cond
+    (applies-to-rule? word "ive" (c-m-gt 1)) (replace-last 3 "" word)
+    :else word))
+
+(defn step4-case-z [word]
+  (cond
+    (applies-to-rule? word "ize" (c-m-gt 1)) (replace-last 3 "" word)
+    :else word))
+
+(defn step4 [word]
+  (if (< (count word) 6)
+    word
+    (let [pu (penultimate word)]
+      (cond
+        (= pu \a) (step4-case-a word)
+        (= pu \c) (step4-case-c word)
+        (= pu \e) (step4-case-e word)
+        (= pu \i) (step4-case-i word)
+        (= pu \l) (step4-case-l word)
+        (= pu \n) (step4-case-n word)
+        (= pu \o) (step4-case-o word)
+        (= pu \s) (step4-case-s word)
+        (= pu \t) (step4-case-t word)
+        (= pu \u) (step4-case-u word)
+        (= pu \v) (step4-case-v word)
+        (= pu \z) (step4-case-z word)
+        :else word))))
+
+
+;; Step 5: Cleaning up
+;;
+;; Step 5a
+;;
+;;    (m>1) E     ->                  probate        ->  probat
+;;                                    rate           ->  rate
+;;    (m=1 and not *o) E ->           cease          ->  ceas
+;;
+;; Step 5b
+;;
+;;    (m > 1 and *d and *L) -> single letter
+;;                                    controll       ->  control
+;;                                    roll           ->  roll
+
+(defn step5b [word]
+  (if (applies-to-rule? word "" (c-m-gt 1) (c-d) (c-end #{\l}))
+    (replace-last 1 "" word)
+    word))
+
+(defn step5a [word]
+  (cond
+    (applies-to-rule? word "e" (c-m-gt 1)) (replace-last 1 "" word)
+    (applies-to-rule? word "e" (c-m-eq 1) (c-not-o)) (replace-last 1 "" word)
+    :else word))
+
+(defn step5 [word]
   (if (< (count word) 3)
     word
-    (let [step1-result (porter-step1c (porter-step1b (porter-step1a word)))]
-      (let [step2-result (porter-step2 step1-result)]
-        (let [step3-result (porter-step3 step2-result)]
-          (let [step4-result (porter-step4 step3-result)]
-            (let [step5-result (porter-step5 step4-result)]
-              (apply str step5-result))))))))
+    (step5b (step5a word))))
 
-(defn -main
-  [vocfile]
+
+;; Now the actual stemming + main function
+
+(defn stem [word]
+  (if (> (count word) 2)
+    (apply str (step5 (step4 (step3 (step2 (step1 word))))))
+    word))
+
+(defn -main [vocfile]
   (with-open [rdr (clojure.java.io/reader vocfile)]
-    (let [stems (map #(stem %) (line-seq rdr))]
-      (println (clojure.string/join \newline stems)))))
-
+    (println (clojure.string/join \newline (map stem (line-seq rdr))))))
