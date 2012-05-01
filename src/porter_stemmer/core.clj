@@ -56,12 +56,21 @@
   "Returns true if stem ends with any of the characters in the set"
   (contains? set (last stem)))
 
+
 (defn ends-with-cvc? [stem]
   "Returns true if the stem ends with consonant-vowel-consonant and the second consonant
    is not W, X or Y"
-  (if (not (ends-with-any? stem #{\w \x \y}))
-    (let [char-classes (take 3 (map char-class (reverse stem)))]
-      (= char-classes [:c :v :c]))))
+  (let [len (count stem)]
+    (if (< len 3)
+      false
+      (let [c1  (nth stem (- len 3))
+            c2  (nth stem (- len 2))
+            c3  (nth stem (- len 1))]
+        (and
+          (not (contains? #{\w \x \y} c3))
+          (vowel? c2)
+          (consonant? c1)
+          (consonant? c3))))))
 
 (defn ends-with-doublec? [stem]
   (let [n (- (count stem) 2)]
@@ -88,7 +97,7 @@
 (defn replace-last [n s2 word]
   "Returns a string with the last n characters replaced with the given replacement string"
   (let [stem (take (- (count word) n) word)]
-    (concat stem s2)))
+    (reduce conj (vec stem) s2)))
 
 (defn penultimate [word]
   (if (< (count word) 3)
@@ -205,11 +214,11 @@
 
 (defn step1b-pass-two [word]
   (cond
-    (applies-to-rule? word "at") (concat word [\e])
-    (applies-to-rule? word "bl") (concat word [\e])
-    (applies-to-rule? word "iz") (concat word [\e])
+    (applies-to-rule? word "at") (reduce conj word [\e])
+    (applies-to-rule? word "bl") (reduce conj word [\e])
+    (applies-to-rule? word "iz") (reduce conj word [\e])
     (applies-to-rule? word "" (c-d-not #{\l \s \z})) (replace-last 1 "" word)
-    (applies-to-rule? word "" (c-m-eq 1) (c-o)) (concat word [\e])
+    (applies-to-rule? word "" (c-m-eq 1) (c-o)) (reduce conj word [\e])
     :else word))
 
 (defn step1b [word]
