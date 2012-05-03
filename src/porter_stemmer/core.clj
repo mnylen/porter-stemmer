@@ -94,6 +94,10 @@
           true
           (recur (inc i)))))))
 
+(defn shorten [n word]
+  "Returns a version of the word shortened by n characters"
+  (vec (take (- (count word) n) word)))
+
 (defn replace-last [n s2 word]
   "Returns a string with the last n characters replaced with the given replacement string"
   (let [stem (take (- (count word) n) word)]
@@ -202,13 +206,13 @@
     (cond
       (= pu \e)
         (cond
-          (applies-to-rule? word "sses") (replace-last 2 "" word)
-          (applies-to-rule? word "ies") (replace-last 2 ""  word)
+          (applies-to-rule? word "sses") (shorten 2 word)
+          (applies-to-rule? word "ies") (shorten 2  word)
           :else word)
       (= pu \s)
         (cond
           (applies-to-rule? word "ss") word
-          (applies-to-rule? word "s") (replace-last 1 "" word)
+          (applies-to-rule? word "s") (shorten 1 word)
           :else word)
       :else word)))
 
@@ -217,18 +221,18 @@
     (applies-to-rule? word "at") (reduce conj word [\e])
     (applies-to-rule? word "bl") (reduce conj word [\e])
     (applies-to-rule? word "iz") (reduce conj word [\e])
-    (applies-to-rule? word "" (c-d-not #{\l \s \z})) (replace-last 1 "" word)
+    (applies-to-rule? word "" (c-d-not #{\l \s \z})) (shorten 1 word)
     (applies-to-rule? word "" (c-m-eq 1) (c-o)) (reduce conj word [\e])
     :else word))
 
 (defn step1b [word]
   (cond
-    (applies-to-rule? word "eed" (c-m-gt 0)) (replace-last 1 "" word)
+    (applies-to-rule? word "eed" (c-m-gt 0)) (shorten 1 word)
     
     ;; have to check that the word doesn't end with "eed" here, because
     ;; otherwise cases such as "feed" fall through
-    (applies-to-rule? word "ed"  (c-not "eed") (c-v)) (step1b-pass-two (replace-last 2 "" word))
-    (applies-to-rule? word "ing" (c-v)) (step1b-pass-two (replace-last 3 "" word))
+    (applies-to-rule? word "ed"  (c-not "eed") (c-v)) (step1b-pass-two (shorten 2 word))
+    (applies-to-rule? word "ing" (c-v)) (step1b-pass-two (shorten 3 word))
     :else word))
 
 (defn step1c [word]
@@ -267,7 +271,7 @@
 (defn step2-case-a [word]
   (cond
     (applies-to-rule? word "ational" (c-m-gt 0)) (replace-last 5 "e" word)
-    (applies-to-rule? word "tional"  (c-not "ational") (c-m-gt 0)) (replace-last 2 "" word)
+    (applies-to-rule? word "tional"  (c-not "ational") (c-m-gt 0)) (shorten 2 word)
     :else word))
 
 (defn step2-case-c [word]
@@ -278,16 +282,16 @@
 
 (defn step2-case-e [word]
   (cond
-    (applies-to-rule? word "izer" (c-m-gt 0)) (replace-last 1 "" word)
+    (applies-to-rule? word "izer" (c-m-gt 0)) (shorten 1 word)
     :else word))
 
 (defn step2-case-l [word]
   (cond
     (applies-to-rule? word "abli" (c-m-gt 0)) (replace-last 1 "e" word)
-    (applies-to-rule? word "alli" (c-m-gt 0)) (replace-last 2 "" word)
-    (applies-to-rule? word "entli" (c-m-gt 0)) (replace-last 2 "" word)
-    (applies-to-rule? word "eli" (c-m-gt 0)) (replace-last 2 "" word)
-    (applies-to-rule? word "ousli" (c-m-gt 0)) (replace-last 2 "" word)
+    (applies-to-rule? word "alli" (c-m-gt 0)) (shorten 2 word)
+    (applies-to-rule? word "entli" (c-m-gt 0)) (shorten 2 word)
+    (applies-to-rule? word "eli" (c-m-gt 0)) (shorten 2 word)
+    (applies-to-rule? word "ousli" (c-m-gt 0)) (shorten 2 word)
     :else word))
 
 (defn step2-case-o [word]
@@ -299,15 +303,15 @@
 
 (defn step2-case-s [word]
   (cond
-    (applies-to-rule? word "alism" (c-m-gt 0)) (replace-last 3 "" word)
-    (applies-to-rule? word "iveness" (c-m-gt 0)) (replace-last 4 "" word)
-    (applies-to-rule? word "fulness" (c-m-gt 0)) (replace-last 4 "" word)
-    (applies-to-rule? word "ousness" (c-m-gt 0)) (replace-last 4 "" word)
+    (applies-to-rule? word "alism" (c-m-gt 0)) (shorten 3 word)
+    (applies-to-rule? word "iveness" (c-m-gt 0)) (shorten 4 word)
+    (applies-to-rule? word "fulness" (c-m-gt 0)) (shorten 4 word)
+    (applies-to-rule? word "ousness" (c-m-gt 0)) (shorten 4 word)
     :else word))
 
 (defn step2-case-t [word]
   (cond
-    (applies-to-rule? word "aliti" (c-m-gt 0)) (replace-last 3 "" word)
+    (applies-to-rule? word "aliti" (c-m-gt 0)) (shorten 3 word)
     (applies-to-rule? word "iviti" (c-m-gt 0)) (replace-last 3 "e" word)
     (applies-to-rule? word "biliti" (c-m-gt 0)) (replace-last 5 "le" word)
     :else word))
@@ -341,13 +345,13 @@
   (if (< (count word) 5)
     word
     (cond
-      (applies-to-rule? word "icate" (c-m-gt 0)) (replace-last 3 "" word)
-      (applies-to-rule? word "ative" (c-m-gt 0)) (replace-last 5 "" word)
-      (applies-to-rule? word "alize" (c-m-gt 0)) (replace-last 3 "" word)
-      (applies-to-rule? word "iciti" (c-m-gt 0)) (replace-last 3 "" word)
-      (applies-to-rule? word "ical"  (c-m-gt 0)) (replace-last 2 "" word)
-      (applies-to-rule? word "ful"   (c-m-gt 0)) (replace-last 3 "" word)
-      (applies-to-rule? word "ness"  (c-m-gt 0)) (replace-last 4 "" word)
+      (applies-to-rule? word "icate" (c-m-gt 0)) (shorten 3 word)
+      (applies-to-rule? word "ative" (c-m-gt 0)) (shorten 5 word)
+      (applies-to-rule? word "alize" (c-m-gt 0)) (shorten 3 word)
+      (applies-to-rule? word "iciti" (c-m-gt 0)) (shorten 3 word)
+      (applies-to-rule? word "ical"  (c-m-gt 0)) (shorten 2 word)
+      (applies-to-rule? word "ful"   (c-m-gt 0)) (shorten 3 word)
+      (applies-to-rule? word "ness"  (c-m-gt 0)) (shorten 4 word)
       :else word)))
 
 
@@ -379,69 +383,69 @@
 
 (defn step4-case-a [word]
   (cond
-    (applies-to-rule? word "al" (c-m-gt 1)) (replace-last 2 "" word)
+    (applies-to-rule? word "al" (c-m-gt 1)) (shorten 2 word)
     :else word))
 
 (defn step4-case-c [word]
   (cond
-    (applies-to-rule? word "ance" (c-m-gt 1)) (replace-last 4 "" word)
-    (applies-to-rule? word "ence" (c-m-gt 1)) (replace-last 4 "" word)
+    (applies-to-rule? word "ance" (c-m-gt 1)) (shorten 4 word)
+    (applies-to-rule? word "ence" (c-m-gt 1)) (shorten 4 word)
     :else word))
 
 (defn step4-case-e [word]
   (if (applies-to-rule? word "er" (c-m-gt 1))
-    (replace-last 2 "" word)
+    (shorten 2 word)
     word))
 
 (defn step4-case-i [word]
   (cond
-    (applies-to-rule? word "ic" (c-m-gt 1)) (replace-last 2 "" word)
+    (applies-to-rule? word "ic" (c-m-gt 1)) (shorten 2 word)
     :else word))
 
 (defn step4-case-l [word]
   (cond
-    (applies-to-rule? word "able" (c-m-gt 1)) (replace-last 4 "" word)
-    (applies-to-rule? word "ible" (c-m-gt 1)) (replace-last 4 "" word)
+    (applies-to-rule? word "able" (c-m-gt 1)) (shorten 4 word)
+    (applies-to-rule? word "ible" (c-m-gt 1)) (shorten 4 word)
     :else word))
 
 (defn step4-case-n [word]
   (cond
-    (applies-to-rule? word "ant" (c-m-gt 1)) (replace-last 3 "" word)
-    (applies-to-rule? word "ement" (c-m-gt 1)) (replace-last 5 "" word)
-    (applies-to-rule? word "ment" (c-not "ement") (c-m-gt 1)) (replace-last 4 "" word)
-    (applies-to-rule? word "ent" (c-not "ment") (c-m-gt 1)) (replace-last 3 "" word)
+    (applies-to-rule? word "ant" (c-m-gt 1)) (shorten 3 word)
+    (applies-to-rule? word "ement" (c-m-gt 1)) (shorten 5 word)
+    (applies-to-rule? word "ment" (c-not "ement") (c-m-gt 1)) (shorten 4 word)
+    (applies-to-rule? word "ent" (c-not "ment") (c-m-gt 1)) (shorten 3 word)
     :else word))
 
 (defn step4-case-o [word]
   (cond
-    (applies-to-rule? word "ion" (c-m-gt 1) (c-end #{\s \t})) (replace-last 3 "" word)
-    (applies-to-rule? word "ou"  (c-m-gt 1)) (replace-last 2 "" word)
+    (applies-to-rule? word "ion" (c-m-gt 1) (c-end #{\s \t})) (shorten 3 word)
+    (applies-to-rule? word "ou"  (c-m-gt 1)) (shorten 2 word)
     :else word))
 
 (defn step4-case-s [word]
   (cond
-    (applies-to-rule? word "ism" (c-m-gt 1)) (replace-last 3 "" word)
+    (applies-to-rule? word "ism" (c-m-gt 1)) (shorten 3 word)
     :else word))
 
 (defn step4-case-t [word]
   (cond
-    (applies-to-rule? word "ate" (c-m-gt 1)) (replace-last 3 "" word)
-    (applies-to-rule? word "iti" (c-m-gt 1)) (replace-last 3 "" word)
+    (applies-to-rule? word "ate" (c-m-gt 1)) (shorten 3 word)
+    (applies-to-rule? word "iti" (c-m-gt 1)) (shorten 3 word)
     :else word))
 
 (defn step4-case-u [word]
   (cond
-    (applies-to-rule? word "ous" (c-m-gt 1)) (replace-last 3 "" word)
+    (applies-to-rule? word "ous" (c-m-gt 1)) (shorten 3 word)
     :else word))
 
 (defn step4-case-v [word]
   (cond
-    (applies-to-rule? word "ive" (c-m-gt 1)) (replace-last 3 "" word)
+    (applies-to-rule? word "ive" (c-m-gt 1)) (shorten 3 word)
     :else word))
 
 (defn step4-case-z [word]
   (cond
-    (applies-to-rule? word "ize" (c-m-gt 1)) (replace-last 3 "" word)
+    (applies-to-rule? word "ize" (c-m-gt 1)) (shorten 3 word)
     :else word))
 
 (defn step4 [word]
@@ -480,13 +484,13 @@
 
 (defn step5b [word]
   (if (applies-to-rule? word "" (c-m-gt 1) (c-d) (c-end #{\l}))
-    (replace-last 1 "" word)
+    (shorten 1 word)
     word))
 
 (defn step5a [word]
   (cond
-    (applies-to-rule? word "e" (c-m-gt 1)) (replace-last 1 "" word)
-    (applies-to-rule? word "e" (c-m-eq 1) (c-not-o)) (replace-last 1 "" word)
+    (applies-to-rule? word "e" (c-m-gt 1)) (shorten 1 word)
+    (applies-to-rule? word "e" (c-m-eq 1) (c-not-o)) (shorten 1 word)
     :else word))
 
 (defn step5 [word]
